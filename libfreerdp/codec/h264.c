@@ -900,6 +900,12 @@ BOOL h264_context_set_option(H264_CONTEXT* h264, H264_CONTEXT_OPTION option, UIN
 		case H264_CONTEXT_OPTION_HW_ACCEL:
 			h264->hwAccel = (value);
 			return TRUE;
+		case H264_CONTEXT_OPTION_ENCODER:
+			h264->Encoder = value;
+			return TRUE;
+		case H264_CONTEXT_OPTION_ENCODER_SPEED:
+			h264->EncoderSpeed = value;
+			return TRUE;
 		default:
 			WLog_Print(h264->log, WLOG_WARN, "Unknown H264_CONTEXT_OPTION[0x%08" PRIx32 "]",
 			           option);
@@ -924,6 +930,10 @@ UINT32 h264_context_get_option(H264_CONTEXT* h264, H264_CONTEXT_OPTION option)
 			return h264->UsageType;
 		case H264_CONTEXT_OPTION_HW_ACCEL:
 			return h264->hwAccel;
+		case H264_CONTEXT_OPTION_ENCODER:
+			return h264->Encoder;
+		case H264_CONTEXT_OPTION_ENCODER_SPEED:
+			return h264->EncoderSpeed;
 		default:
 			WLog_Print(h264->log, WLOG_WARN, "Unknown H264_CONTEXT_OPTION[0x%08" PRIx32 "]",
 			           option);

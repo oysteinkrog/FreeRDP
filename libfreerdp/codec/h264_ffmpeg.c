@@ -443,6 +443,26 @@ static int set_hw_frames_ctx(H264_CONTEXT* WINPR_RESTRICT h264)
 }
 #endif
 
+static BOOL libavcodec_is_nvenc(const H264_CONTEXT_LIBAVCODEC* sys)
+{
+	return sys->codecEncoder && (strcmp(sys->codecEncoder->name, "h264_nvenc") == 0);
+}
+
+static const char* libavcodec_encoder_preset(const H264_CONTEXT* h264,
+                                             const H264_CONTEXT_LIBAVCODEC* sys)
+{
+	const BOOL nvenc = libavcodec_is_nvenc(sys);
+	switch (h264->EncoderSpeed)
+	{
+		case H264_ENCODER_SPEED_FASTEST:
+			return nvenc ? "p1" : "superfast";
+		case H264_ENCODER_SPEED_FAST:
+			return nvenc ? "p3" : "veryfast";
+		default:
+			return nvenc ? "p4" : "medium";
+	}
+}
+
 static BOOL libavcodec_create_encoder_context(H264_CONTEXT* WINPR_RESTRICT h264)
 {
 	BOOL recreate = FALSE;
@@ -521,12 +541,25 @@ static BOOL libavcodec_create_encoder_context(H264_CONTEXT* WINPR_RESTRICT h264)
 	else
 #endif
 	{
-		av_opt_set(sys->codecEncoderContext, "preset", "medium", AV_OPT_SEARCH_CHILDREN);
+		av_opt_set(sys->codecEncoderContext, "preset", libavcodec_encoder_preset(h264, sys),
+		           AV_OPT_SEARCH_CHILDREN);
+		if (libavcodec_is_nvenc(sys))
+		{
+			/* NVENC has no "zerolatency" tune: ask for ultra low latency instead. */
+			av_opt_set(sys->codecEncoderContext, "tune", "ull", AV_OPT_SEARCH_CHILDREN);
+			av_opt_set_int(sys->codecEncoderContext, "zerolatency", 1, AV_OPT_SEARCH_CHILDREN);
+			av_opt_set_int(sys->codecEncoderContext, "delay", 0, AV_OPT_SEARCH_CHILDREN);
+			sys->codecEncoderContext->max_b_frames = 0;
+		}
 		sys->codecEncoderContext->pix_fmt = AV_PIX_FMT_YUV420P;
 	}
 
 	if (avcodec_open2(sys->codecEncoderContext, sys->codecEncoder, nullptr) < 0)
+	{
+		WLog_Print(h264->log, WLOG_ERROR, "Failed to open H264 encoder %s",
+		           sys->codecEncoder->name);
 		goto EXCEPTION;
+	}
 
 	return TRUE;
 EXCEPTION:
@@ -1207,6 +1240,18 @@ static BOOL libavcodec_init(H264_CONTEXT* h264)
 			}
 		}
 #endif
+		if (!sys->codecEncoder && (h264->Encoder != H264_ENCODER_DEFAULT))
+		{
+			const char* name = (h264->Encoder == H264_ENCODER_NVENC) ? "h264_nvenc" : "libx264";
+			sys->codecEncoder = avcodec_find_encoder_by_name(name);
+			if (sys->codecEncoder)
+				WLog_Print(h264->log, WLOG_INFO, "Using %s for H264 encoding", name);
+			else
+				WLog_Print(h264->log, WLOG_WARN, "H264 encoder %s not found, using the default",
+				           name);
+			h264->hwAccel = FALSE; /* takes YUV420P frames from system memory */
+		}
+
 		if (!sys->codecEncoder)
 		{
 			sys->codecEncoder = avcodec_find_encoder(AV_CODEC_ID_H264);

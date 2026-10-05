@@ -63,7 +63,34 @@ extern "C"
 		H264_CONTEXT_OPTION_USAGETYPE, /** @since version 3.6.0 */
 		H264_CONTEXT_OPTION_HW_ACCEL,  /** set to request hw accel, get to check if hw accel is on,
 		                                  @since version 3.11.0 */
+		H264_CONTEXT_OPTION_ENCODER,   /** an H264_ENCODER value, applied by h264_context_reset,
+		                                  @since version 3.31.1 (oysteinkrog fork) */
+		H264_CONTEXT_OPTION_ENCODER_SPEED, /** an H264_ENCODER_SPEED value,
+		                                      @since version 3.31.1 (oysteinkrog fork) */
 	} H264_CONTEXT_OPTION;
+
+	/**
+	 * @brief The FFmpeg encoder to use. Set it with H264_CONTEXT_OPTION_ENCODER, then call
+	 * h264_context_reset. If the encoder cannot be opened, the default one is used.
+	 * @since version 3.31.1 (oysteinkrog fork)
+	 */
+	typedef enum
+	{
+		H264_ENCODER_DEFAULT = 0, /** libavcodec's default H.264 encoder, or VAAPI with HW_ACCEL */
+		H264_ENCODER_LIBX264,
+		H264_ENCODER_NVENC,
+	} H264_ENCODER;
+
+	/**
+	 * @brief Encoder speed preset. DEFAULT keeps the upstream presets.
+	 * @since version 3.31.1 (oysteinkrog fork)
+	 */
+	typedef enum
+	{
+		H264_ENCODER_SPEED_DEFAULT = 0,
+		H264_ENCODER_SPEED_FAST,
+		H264_ENCODER_SPEED_FASTEST,
+	} H264_ENCODER_SPEED;
 
 	FREERDP_API void free_h264_metablock(RDPGFX_H264_METABLOCK* meta);
 
