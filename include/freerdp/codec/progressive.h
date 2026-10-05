@@ -66,6 +66,14 @@ extern "C"
 	WINPR_ATTR_NODISCARD
 	FREERDP_API BOOL progressive_context_reset(PROGRESSIVE_CONTEXT* WINPR_RESTRICT progressive);
 
+	/** Set the quantization values the encoder uses, see rfx_context_set_quantization_values
+	 *  @since version 3.31.1 (oysteinkrog fork)
+	 */
+	WINPR_ATTR_NODISCARD
+	FREERDP_API BOOL
+	progressive_context_set_quantization_values(PROGRESSIVE_CONTEXT* WINPR_RESTRICT progressive,
+	                                            const UINT32* WINPR_RESTRICT quantVals, size_t count);
+
 	FREERDP_API void progressive_context_free(PROGRESSIVE_CONTEXT* progressive);
 
 	WINPR_ATTR_MALLOC(progressive_context_free, 1)

@@ -2637,6 +2637,16 @@ BOOL progressive_context_reset(PROGRESSIVE_CONTEXT* WINPR_RESTRICT progressive)
 	return (progressive != nullptr);
 }
 
+BOOL progressive_context_set_quantization_values(PROGRESSIVE_CONTEXT* WINPR_RESTRICT progressive,
+                                                 const UINT32* WINPR_RESTRICT quantVals,
+                                                 size_t count)
+{
+	WINPR_ASSERT(progressive);
+	if (!progressive->rfx_context)
+		return FALSE;
+	return rfx_context_set_quantization_values(progressive->rfx_context, quantVals, count);
+}
+
 PROGRESSIVE_CONTEXT* progressive_context_new(BOOL Compressor)
 {
 	return progressive_context_new_ex(Compressor, 0);

@@ -2247,6 +2247,35 @@ BOOL rfx_context_set_mode(RFX_CONTEXT* WINPR_RESTRICT context, RLGR_MODE mode)
 	return TRUE;
 }
 
+BOOL rfx_context_set_quantization_values(RFX_CONTEXT* WINPR_RESTRICT context,
+                                         const UINT32* WINPR_RESTRICT quantVals, size_t count)
+{
+	WINPR_ASSERT(context);
+	WINPR_ASSERT(quantVals);
+
+	if (count != NR_QUANT_VALUES)
+		return FALSE;
+
+	for (size_t i = 0; i < count; i++)
+	{
+		if ((quantVals[i] < 6) || (quantVals[i] > 15))
+			return FALSE;
+	}
+
+	UINT32* quants = (UINT32*)winpr_aligned_malloc(sizeof(UINT32) * NR_QUANT_VALUES, 32);
+	if (!quants)
+		return FALSE;
+
+	CopyMemory(quants, quantVals, sizeof(UINT32) * NR_QUANT_VALUES);
+	winpr_aligned_free(context->quants);
+	context->quants = quants;
+	context->numQuant = 1;
+	context->quantIdxY = 0;
+	context->quantIdxCb = 0;
+	context->quantIdxCr = 0;
+	return TRUE;
+}
+
 RLGR_MODE rfx_context_get_mode(RFX_CONTEXT* WINPR_RESTRICT context)
 {
 	WINPR_ASSERT(context);

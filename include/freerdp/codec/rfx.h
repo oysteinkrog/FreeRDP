@@ -165,6 +165,20 @@ extern "C"
 	WINPR_ATTR_NODISCARD
 	FREERDP_API RLGR_MODE rfx_context_get_mode(RFX_CONTEXT* WINPR_RESTRICT context);
 
+	/** Set the quantization values the encoder uses for every tile
+	 *  @param context The RFX context to update
+	 *  @param quantVals Ten values in the order LL3, LH3, HL3, HH3, LH2, HL2, HH2, LH1, HL1,
+	 *         HH1. Each is 6 to 15: 6 keeps that band at full precision, each step above
+	 *         halves it.
+	 *  @param count The number of values, must be 10
+	 *  @return \b TRUE for success, \b FALSE for invalid values
+	 *  @since version 3.31.1 (oysteinkrog fork)
+	 */
+	WINPR_ATTR_NODISCARD
+	FREERDP_API BOOL rfx_context_set_quantization_values(RFX_CONTEXT* WINPR_RESTRICT context,
+	                                                     const UINT32* WINPR_RESTRICT quantVals,
+	                                                     size_t count);
+
 	FREERDP_API void rfx_context_set_pixel_format(RFX_CONTEXT* WINPR_RESTRICT context,
 	                                              UINT32 pixel_format);
 
