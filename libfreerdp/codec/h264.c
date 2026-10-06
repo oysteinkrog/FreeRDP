@@ -513,7 +513,7 @@ INT32 avc444_compress(H264_CONTEXT* h264, const BYTE* pSrcData, DWORD SrcFormat,
 
 	if (++tFrames == 100)
 	{
-		WLog_Print(h264->log, WLOG_DEBUG,
+		WLog_Print(h264->log, WLOG_WARN,
 		           "avc444 per frame: convert %.1f ms, detect %.1f ms, luma encode %.1f ms, "
 		           "chroma encode %.1f ms",
 		           tConvert / 1e8, tDetect / 1e8, tLuma / 1e8, tChroma / 1e8);
