@@ -524,7 +524,9 @@ static BOOL libavcodec_create_encoder_context(H264_CONTEXT* WINPR_RESTRICT h264)
 #endif
 	sys->codecEncoderContext->time_base =
 	    (AVRational){ 1, WINPR_ASSERTING_INT_CAST(int, h264->FrameRate) };
-	av_opt_set(sys->codecEncoderContext, "tune", "zerolatency", AV_OPT_SEARCH_CHILDREN);
+	/* "zerolatency" is an x264 tune; NVENC rejects it and gets its own below. */
+	if (!libavcodec_is_nvenc(sys))
+		av_opt_set(sys->codecEncoderContext, "tune", "zerolatency", AV_OPT_SEARCH_CHILDREN);
 
 	sys->codecEncoderContext->flags |= AV_CODEC_FLAG_LOOP_FILTER;
 
