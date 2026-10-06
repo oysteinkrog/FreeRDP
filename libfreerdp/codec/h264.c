@@ -25,7 +25,6 @@
 #include <winpr/library.h>
 #include <winpr/bitstream.h>
 #include <winpr/synch.h>
-#include <winpr/sysinfo.h>
 #include <winpr/pool.h>
 
 #include <freerdp/primitives.h>
@@ -549,16 +548,9 @@ INT32 avc444_compress(H264_CONTEXT* h264, const BYTE* pSrcData, DWORD SrcFormat,
 	}
 	h264->encodingBuffer = !h264->encodingBuffer;
 
-	/* Debug timing: where an AVC444 frame spends its time, logged every 100 frames. */
-	static _Thread_local UINT64 tConvert = 0, tDetect = 0, tLuma = 0, tChroma = 0, tFrames = 0;
-	UINT64 tStart = winpr_GetTickCount64NS();
-
 	if (!yuv444_context_encode(h264->yuv, version, pSrcData, nSrcStep, SrcFormat, h264->iStride,
 	                           pYUV444Data, pYUVData, region, 1))
 		goto fail;
-	UINT64 tNow = winpr_GetTickCount64NS();
-	tConvert += tNow - tStart;
-	tStart = tNow;
 
 	if (!detect_changes(h264->firstLumaFrameDone, h264->QP, region, 0, pYUV444Data, pOldYUV444Data,
 	                    h264->iStride, meta))
@@ -569,9 +561,6 @@ INT32 avc444_compress(H264_CONTEXT* h264, const BYTE* pSrcData, DWORD SrcFormat,
 	                    pOldYUVData,
 	                    h264->iStride, auxMeta))
 		goto fail;
-	tNow = winpr_GetTickCount64NS();
-	tDetect += tNow - tStart;
-	tStart = tNow;
 
 	/* [MS-RDPEGFX] 2.2.4.5 RFX_AVC444_BITMAP_STREAM
 	 * LC:
@@ -602,9 +591,6 @@ INT32 avc444_compress(H264_CONTEXT* h264, const BYTE* pSrcData, DWORD SrcFormat,
 		memcpy(h264->lumaData, coded, codedSize);
 		*ppDstData = h264->lumaData;
 		*pDstSize = codedSize;
-		tNow = winpr_GetTickCount64NS();
-		tLuma += tNow - tStart;
-		tStart = tNow;
 	}
 
 	if ((*op == 0) || (*op == 2))
@@ -616,16 +602,6 @@ INT32 avc444_compress(H264_CONTEXT* h264, const BYTE* pSrcData, DWORD SrcFormat,
 		h264->firstChromaFrameDone = TRUE;
 		*ppAuxDstData = coded;
 		*pAuxDstSize = codedSize;
-		tChroma += winpr_GetTickCount64NS() - tStart;
-	}
-
-	if (++tFrames == 100)
-	{
-		WLog_Print(h264->log, WLOG_WARN,
-		           "avc444 per frame: convert %.1f ms, detect %.1f ms, luma encode %.1f ms, "
-		           "chroma encode %.1f ms",
-		           tConvert / 1e8, tDetect / 1e8, tLuma / 1e8, tChroma / 1e8);
-		tConvert = tDetect = tLuma = tChroma = tFrames = 0;
 	}
 
 	rc = 1;
