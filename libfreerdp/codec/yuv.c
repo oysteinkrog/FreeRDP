@@ -830,6 +830,9 @@ static BOOL pool_encode(YUV_CONTEXT* WINPR_RESTRICT context, PTP_WORK_CALLBACK c
 
 			current = &context->work_enc_params[waitCount];
 			r.top += y * context->heightStep;
+			/* One strip per work item. The last one also takes the rows getSteps() rounded off. */
+			if (y + 1 < steps)
+				r.bottom = WINPR_ASSERTING_INT_CAST(UINT16, r.top + context->heightStep);
 			*current = pool_encode_fill(&r, context, pSrcData, nSrcStep, SrcFormat, iStride,
 			                            pYUVLumaData, pYUVChromaData);
 			if (!submit_object(&context->work_objects[waitCount], cb, current, context))
