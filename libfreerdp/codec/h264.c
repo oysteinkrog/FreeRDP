@@ -251,18 +251,59 @@ static inline BOOL diff_tile(const RECTANGLE_16* regionRect, BYTE* pYUVData[3],
 	for (size_t y = regionRect->top; y < regionRect->bottom; y++)
 	{
 		const BYTE* cur0 = &pYUVData[0][y * iStride[0]];
-		const BYTE* cur1 = &pYUVData[1][y * iStride[1]];
-		const BYTE* cur2 = &pYUVData[2][y * iStride[2]];
 		const BYTE* old0 = &pOldYUVData[0][y * iStride[0]];
-		const BYTE* old1 = &pOldYUVData[1][y * iStride[1]];
-		const BYTE* old2 = &pOldYUVData[2][y * iStride[2]];
-
 		if (memcmp(&cur0[regionRect->left], &old0[regionRect->left], size) != 0)
 			return TRUE;
-		if (memcmp(&cur1[regionRect->left / 2], &old1[regionRect->left / 2], size / 2) != 0)
+
+		/* U and V are 4:2:0: half the rows, so screen row y is chroma row y / 2. */
+		if ((y % 2) != 0)
+			continue;
+		const BYTE* cur1 = &pYUVData[1][(y / 2) * iStride[1]];
+		const BYTE* cur2 = &pYUVData[2][(y / 2) * iStride[2]];
+		const BYTE* old1 = &pOldYUVData[1][(y / 2) * iStride[1]];
+		const BYTE* old2 = &pOldYUVData[2][(y / 2) * iStride[2]];
+		const size_t csize = (size + 1) / 2;
+		if (memcmp(&cur1[regionRect->left / 2], &old1[regionRect->left / 2], csize) != 0)
 			return TRUE;
-		if (memcmp(&cur2[regionRect->left / 2], &old2[regionRect->left / 2], size / 2) != 0)
+		if (memcmp(&cur2[regionRect->left / 2], &old2[regionRect->left / 2], csize) != 0)
 			return TRUE;
+	}
+	return FALSE;
+}
+
+/* Did the AVC444v2 chroma picture change for this screen tile? The chroma picture keeps the
+ * U and V samples of a screen column x in two places (see general_RGBToAVC444YUVv2): the Y
+ * plane at x / 2 and width / 2 + x / 2, and the U and V planes at x / 4 and width / 4 + x / 4,
+ * on half the rows. The decoder reads the chroma region rects as screen rects, so the
+ * comparison has to be done per screen tile too. */
+static inline BOOL diff_chroma_v2_tile(const RECTANGLE_16* tile, UINT32 width, BYTE* pYUVData[3],
+                                       BYTE* pOldYUVData[3], UINT32 const iStride[3])
+{
+	const size_t x0 = tile->left;
+	const size_t x1 = tile->right;
+	const size_t yHalf = (x1 - x0 + 1) / 2;
+	const size_t uvQuarter = (x1 - x0 + 3) / 4;
+
+	for (size_t y = tile->top; y < tile->bottom; y++)
+	{
+		const BYTE* cur = &pYUVData[0][y * iStride[0]];
+		const BYTE* old = &pOldYUVData[0][y * iStride[0]];
+		if (memcmp(&cur[x0 / 2], &old[x0 / 2], yHalf) != 0)
+			return TRUE;
+		if (memcmp(&cur[width / 2 + x0 / 2], &old[width / 2 + x0 / 2], yHalf) != 0)
+			return TRUE;
+
+		if ((y % 2) != 0)
+			continue;
+		for (size_t p = 1; p < 3; p++)
+		{
+			const BYTE* curP = &pYUVData[p][(y / 2) * iStride[p]];
+			const BYTE* oldP = &pOldYUVData[p][(y / 2) * iStride[p]];
+			if (memcmp(&curP[x0 / 4], &oldP[x0 / 4], uvQuarter) != 0)
+				return TRUE;
+			if (memcmp(&curP[width / 4 + x0 / 4], &oldP[width / 4 + x0 / 4], uvQuarter) != 0)
+				return TRUE;
+		}
 	}
 	return FALSE;
 }
@@ -270,6 +311,7 @@ static inline BOOL diff_tile(const RECTANGLE_16* regionRect, BYTE* pYUVData[3],
 typedef struct
 {
 	const RECTANGLE_16* region;
+	UINT32 chromaV2Width; /* nonzero: compare an AVC444v2 chroma picture, see above */
 	BYTE** cur;
 	BYTE** old;
 	const UINT32* stride;
@@ -290,7 +332,10 @@ static void detect_row(DETECT_ROW_PARAM* p)
 		rect.top = (UINT16)MIN(UINT16_MAX, r->top + p->top);
 		rect.right = (UINT16)MIN(UINT16_MAX, MIN(r->left + x + 64, r->right));
 		rect.bottom = (UINT16)MIN(UINT16_MAX, MIN(r->top + p->top + 64, r->bottom));
-		if (diff_tile(&rect, p->cur, p->old, p->stride))
+		const BOOL changed =
+		    p->chromaV2Width ? diff_chroma_v2_tile(&rect, p->chromaV2Width, p->cur, p->old, p->stride)
+		                     : diff_tile(&rect, p->cur, p->old, p->stride);
+		if (changed)
 			p->out[p->count++] = rect;
 	}
 }
@@ -303,8 +348,8 @@ static void CALLBACK detect_row_work(PTP_CALLBACK_INSTANCE instance, void* conte
 }
 
 static BOOL detect_changes(BOOL firstFrameDone, const UINT32 QP, const RECTANGLE_16* regionRect,
-                           BYTE* pYUVData[3], BYTE* pOldYUVData[3], UINT32 const iStride[3],
-                           RDPGFX_H264_METABLOCK* meta)
+                           UINT32 chromaV2Width, BYTE* pYUVData[3], BYTE* pOldYUVData[3],
+                           UINT32 const iStride[3], RDPGFX_H264_METABLOCK* meta)
 {
 	size_t count = 0;
 	size_t wc = 0;
@@ -333,8 +378,9 @@ static BOOL detect_changes(BOOL firstFrameDone, const UINT32 QP, const RECTANGLE
 		PTP_WORK* works = calloc(rows, sizeof(PTP_WORK));
 		for (size_t i = 0; i < rows; i++)
 		{
-			DETECT_ROW_PARAM row = { regionRect, pYUVData, pOldYUVData, iStride, i * 64,
-				                     &rectangles[i * wc], 0 };
+			DETECT_ROW_PARAM row = { regionRect,         chromaV2Width, pYUVData, pOldYUVData,
+				                     iStride,            i * 64,        &rectangles[i * wc],
+				                     0 };
 			if (!params || !works)
 			{
 				detect_row(&row);
@@ -438,7 +484,7 @@ INT32 avc420_compress(H264_CONTEXT* h264, const BYTE* pSrcData, DWORD SrcFormat,
 	                           regionRect, 1))
 		goto fail;
 
-	if (!detect_changes(h264->firstLumaFrameDone, h264->QP, regionRect, pYUVData, pOldYUVData,
+	if (!detect_changes(h264->firstLumaFrameDone, h264->QP, regionRect, 0, pYUVData, pOldYUVData,
 	                    h264->iStride, meta))
 		goto fail;
 
@@ -514,10 +560,13 @@ INT32 avc444_compress(H264_CONTEXT* h264, const BYTE* pSrcData, DWORD SrcFormat,
 	tConvert += tNow - tStart;
 	tStart = tNow;
 
-	if (!detect_changes(h264->firstLumaFrameDone, h264->QP, region, pYUV444Data, pOldYUV444Data,
+	if (!detect_changes(h264->firstLumaFrameDone, h264->QP, region, 0, pYUV444Data, pOldYUV444Data,
 	                    h264->iStride, meta))
 		goto fail;
-	if (!detect_changes(h264->firstChromaFrameDone, h264->QP, region, pYUVData, pOldYUVData,
+	if (!detect_changes(h264->firstChromaFrameDone, h264->QP, region,
+	                    /* v2 chroma is compared per screen tile; v1 keeps the old picture tiles */
+	                    (version == 2) ? (UINT32)(region->right - region->left) : 0, pYUVData,
+	                    pOldYUVData,
 	                    h264->iStride, auxMeta))
 		goto fail;
 	tNow = winpr_GetTickCount64NS();
