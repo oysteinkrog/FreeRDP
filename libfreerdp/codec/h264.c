@@ -26,6 +26,7 @@
 #include <winpr/bitstream.h>
 #include <winpr/synch.h>
 #include <winpr/sysinfo.h>
+#include <winpr/pool.h>
 
 #include <freerdp/primitives.h>
 #include <freerdp/codec/h264.h>
@@ -266,6 +267,41 @@ static inline BOOL diff_tile(const RECTANGLE_16* regionRect, BYTE* pYUVData[3],
 	return FALSE;
 }
 
+typedef struct
+{
+	const RECTANGLE_16* region;
+	BYTE** cur;
+	BYTE** old;
+	const UINT32* stride;
+	size_t top;        /* top of this row of tiles, relative to region */
+	RECTANGLE_16* out; /* room for one row of tiles */
+	size_t count;
+} DETECT_ROW_PARAM;
+
+/* Compares one row of 64x64 tiles. Rows are independent, so they run on the thread pool. */
+static void detect_row(DETECT_ROW_PARAM* p)
+{
+	const RECTANGLE_16* r = p->region;
+	p->count = 0;
+	for (size_t x = 0; x < (size_t)(r->right - r->left); x += 64)
+	{
+		RECTANGLE_16 rect;
+		rect.left = (UINT16)MIN(UINT16_MAX, r->left + x);
+		rect.top = (UINT16)MIN(UINT16_MAX, r->top + p->top);
+		rect.right = (UINT16)MIN(UINT16_MAX, MIN(r->left + x + 64, r->right));
+		rect.bottom = (UINT16)MIN(UINT16_MAX, MIN(r->top + p->top + 64, r->bottom));
+		if (diff_tile(&rect, p->cur, p->old, p->stride))
+			p->out[p->count++] = rect;
+	}
+}
+
+static void CALLBACK detect_row_work(PTP_CALLBACK_INSTANCE instance, void* context, PTP_WORK work)
+{
+	WINPR_UNUSED(instance);
+	WINPR_UNUSED(work);
+	detect_row((DETECT_ROW_PARAM*)context);
+}
+
 static BOOL detect_changes(BOOL firstFrameDone, const UINT32 QP, const RECTANGLE_16* regionRect,
                            BYTE* pYUVData[3], BYTE* pOldYUVData[3], UINT32 const iStride[3],
                            RDPGFX_H264_METABLOCK* meta)
@@ -290,21 +326,44 @@ static BOOL detect_changes(BOOL firstFrameDone, const UINT32 QP, const RECTANGLE
 	}
 	else
 	{
-		for (size_t y = 0; y < regionRect->bottom - regionRect->top; y += 64)
+		/* One work item per row of tiles; each writes its changed tiles into its own part of
+		 * rectangles, which is then compacted in row order. */
+		const size_t rows = ((size_t)(regionRect->bottom - regionRect->top) + 63) / 64;
+		DETECT_ROW_PARAM* params = calloc(rows, sizeof(DETECT_ROW_PARAM));
+		PTP_WORK* works = calloc(rows, sizeof(PTP_WORK));
+		for (size_t i = 0; i < rows; i++)
 		{
-			for (size_t x = 0; x < regionRect->right - regionRect->left; x += 64)
+			DETECT_ROW_PARAM row = { regionRect, pYUVData, pOldYUVData, iStride, i * 64,
+				                     &rectangles[i * wc], 0 };
+			if (!params || !works)
 			{
-				RECTANGLE_16 rect;
-				rect.left = (UINT16)MIN(UINT16_MAX, regionRect->left + x);
-				rect.top = (UINT16)MIN(UINT16_MAX, regionRect->top + y);
-				rect.right =
-				    (UINT16)MIN(UINT16_MAX, MIN(regionRect->left + x + 64, regionRect->right));
-				rect.bottom =
-				    (UINT16)MIN(UINT16_MAX, MIN(regionRect->top + y + 64, regionRect->bottom));
-				if (diff_tile(&rect, pYUVData, pOldYUVData, iStride))
-					rectangles[count++] = rect;
+				detect_row(&row);
+				memmove(&rectangles[count], row.out, row.count * sizeof(RECTANGLE_16));
+				count += row.count;
+				continue;
+			}
+			params[i] = row;
+			works[i] = CreateThreadpoolWork(detect_row_work, &params[i], nullptr);
+			if (works[i])
+				SubmitThreadpoolWork(works[i]);
+			else
+				detect_row(&params[i]);
+		}
+		if (params && works)
+		{
+			for (size_t i = 0; i < rows; i++)
+			{
+				if (works[i])
+				{
+					WaitForThreadpoolWorkCallbacks(works[i], FALSE);
+					CloseThreadpoolWork(works[i]);
+				}
+				memmove(&rectangles[count], params[i].out, params[i].count * sizeof(RECTANGLE_16));
+				count += params[i].count;
 			}
 		}
+		free(works);
+		free((void*)params);
 	}
 	if (!allocate_h264_metablock(QP, rectangles, meta, count))
 		return FALSE;
