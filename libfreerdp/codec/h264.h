@@ -63,6 +63,7 @@ extern "C"
 		UINT32 QP;
 		UINT32 UsageType;
 		UINT32 hwAccel;
+		UINT32 hevc444;
 		UINT32 NumberOfThreads;
 
 		UINT32 iStride[3];

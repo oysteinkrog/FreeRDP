@@ -205,6 +205,46 @@ INT32 avc420_decompress(H264_CONTEXT* h264, const BYTE* pSrcData, UINT32 SrcSize
 	return 1;
 }
 
+INT32 hevc444_decompress(H264_CONTEXT* h264, const BYTE* pSrcData, UINT32 SrcSize, BYTE* pDstData,
+                         DWORD DstFormat, UINT32 nDstStep, UINT32 nDstWidth, UINT32 nDstHeight,
+                         const RECTANGLE_16* regionRects, UINT32 numRegionRects)
+{
+	if (!h264 || h264->Compressor || !h264->hevc444 || !pDstData)
+		return -1001;
+
+	if (!areRectsValid(h264->log, nDstWidth, nDstHeight, regionRects, numRegionRects))
+		return -1013;
+
+	const int status = log_decompress(h264, pSrcData, SrcSize, regionRects, numRegionRects);
+	if (status == 0)
+		return 1;
+	if (status < 0)
+		return status;
+
+	/* The decoder returns full resolution Y, U and V planes. The server converts RGB with
+	 * the BT.601 limited-range matrix (NVENC rgb_mode=yuv444, whatever the stream's colour
+	 * tags say), the same matrix this primitive and the AVC444 path use. Only the region
+	 * rects changed; the rest of the surface keeps its pixels. */
+	const primitives_t* prims = primitives_get();
+	WINPR_ASSERT(prims);
+	const UINT32 bpp = FreeRDPGetBytesPerPixel(DstFormat);
+	for (UINT32 i = 0; i < numRegionRects; i++)
+	{
+		const RECTANGLE_16* rect = &regionRects[i];
+		const BYTE* pYUVPoint[3] = WINPR_C_ARRAY_INIT;
+		for (size_t x = 0; x < 3; x++)
+			pYUVPoint[x] = h264->pYUVData[x] + 1ull * rect->top * h264->iStride[x] + rect->left;
+		BYTE* pDstPoint = pDstData + 1ull * rect->top * nDstStep + 1ull * rect->left * bpp;
+		const prim_size_t roi = { .width = rect->right - rect->left,
+			                      .height = rect->bottom - rect->top };
+		if (prims->YUV444ToRGB_8u_P3AC4R(pYUVPoint, h264->iStride, pDstPoint, nDstStep, DstFormat,
+		                                 &roi) != PRIMITIVES_SUCCESS)
+			return -1002;
+	}
+
+	return 1;
+}
+
 WINPR_ATTR_NODISCARD
 static BOOL allocate_h264_metablock(UINT32 QP, RECTANGLE_16* rectangles,
                                     RDPGFX_H264_METABLOCK* meta, size_t count)
@@ -923,6 +963,19 @@ BOOL h264_context_set_option(H264_CONTEXT* h264, H264_CONTEXT_OPTION option, UIN
 			h264->hwAccel = (value);
 			IFCALL(h264->subsystem->Uninit, h264);
 			return IFCALLRESULT(TRUE, h264->subsystem->Init, h264);
+		case H264_CONTEXT_OPTION_HEVC444:
+			if (h264->hevc444 == value)
+				return TRUE;
+			if (value && (h264->Compressor || !h264->subsystem ||
+			              (strcmp(h264->subsystem->name, "libavcodec") != 0)))
+			{
+				WLog_Print(h264->log, WLOG_WARN,
+				           "H.265 4:4:4 decoding needs the libavcodec decoder subsystem");
+				return FALSE;
+			}
+			h264->hevc444 = value;
+			IFCALL(h264->subsystem->Uninit, h264);
+			return IFCALLRESULT(TRUE, h264->subsystem->Init, h264);
 		default:
 			WLog_Print(h264->log, WLOG_WARN, "Unknown H264_CONTEXT_OPTION[0x%08" PRIx32 "]",
 			           option);
@@ -947,6 +1000,8 @@ UINT32 h264_context_get_option(H264_CONTEXT* h264, H264_CONTEXT_OPTION option)
 			return h264->UsageType;
 		case H264_CONTEXT_OPTION_HW_ACCEL:
 			return h264->hwAccel;
+		case H264_CONTEXT_OPTION_HEVC444:
+			return h264->hevc444;
 		default:
 			WLog_Print(h264->log, WLOG_WARN, "Unknown H264_CONTEXT_OPTION[0x%08" PRIx32 "]",
 			           option);

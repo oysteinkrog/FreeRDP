@@ -492,6 +492,11 @@ static UINT rdpgfx_send_supported_caps(GENERIC_CHANNEL_CALLBACK* callback)
 #if !defined(WITH_CAIRO) && !defined(WITH_SWSCALE)
 			capsSet->flags |= RDPGFX_CAPS_FLAG_SCALEDMAP_DISABLE;
 #endif
+			/* Private extension, opt-in: only a server that knows the flag (our KRDP fork)
+			 * acts on it, and others may not expect unknown bits. */
+			const char* hevc = getenv("FREERDP_GFX_HEVC444");
+			if (hevc && (strcmp(hevc, "1") == 0))
+				capsSet->flags |= RDPGFX_CAPS_FLAG_HEVC444_SUPPORTED;
 		}
 
 #if defined(WITH_GFX_AZURE)
@@ -1551,6 +1556,14 @@ static BOOL checkSurfaceCommand(const RDPGFX_PLUGIN* gfx, const RDPGFX_SURFACE_C
 		case RDPGFX_CODECID_AVC444v2:
 		case RDPGFX_CODECID_CAPROGRESSIVE:
 		case RDPGFX_CODECID_CAPROGRESSIVE_V2:
+			return TRUE;
+		case RDPGFX_CODECID_HEVC444:
+			if (!(gfx->ConnectionCaps.flags & RDPGFX_CAPS_FLAG_HEVC444_SUPPORTED))
+			{
+				WLog_Print(gfx->base.log, WLOG_ERROR,
+				           "RDPGFX_SURFACE_COMMAND::codecId HEVC444 without the capability");
+				return FALSE;
+			}
 			return TRUE;
 #if defined(WITH_GFX_AV1)
 		case RDPGFX_CODECID_AV1:

@@ -63,6 +63,9 @@ extern "C"
 		H264_CONTEXT_OPTION_USAGETYPE, /** @since version 3.6.0 */
 		H264_CONTEXT_OPTION_HW_ACCEL,  /** set to request hw accel, get to check if hw accel is on,
 		                                  @since version 3.11.0 */
+		H264_CONTEXT_OPTION_HEVC444,   /** private extension: decode H.265 4:4:4
+		                                  (RDPGFX_CODECID_HEVC444) instead of H.264;
+		                                  libavcodec only */
 	} H264_CONTEXT_OPTION;
 
 	FREERDP_API void free_h264_metablock(RDPGFX_H264_METABLOCK* meta);
@@ -112,6 +115,15 @@ extern "C"
 	                                    BYTE* pDstData, DWORD DstFormat, UINT32 nDstStep,
 	                                    UINT32 nDstWidth, UINT32 nDstHeight,
 	                                    const RECTANGLE_16* regionRects, UINT32 numRegionRect);
+
+	/** Private extension: decodes one H.265 4:4:4 access unit (RDPGFX_CODECID_HEVC444) and
+	 *  converts the region rects to DstFormat with the BT.601 limited-range matrix, the same
+	 *  as AVC444. The context must have H264_CONTEXT_OPTION_HEVC444 set. */
+	WINPR_ATTR_NODISCARD
+	FREERDP_API INT32 hevc444_decompress(H264_CONTEXT* h264, const BYTE* pSrcData, UINT32 SrcSize,
+	                                     BYTE* pDstData, DWORD DstFormat, UINT32 nDstStep,
+	                                     UINT32 nDstWidth, UINT32 nDstHeight,
+	                                     const RECTANGLE_16* regionRects, UINT32 numRegionRect);
 
 	WINPR_ATTR_NODISCARD
 	FREERDP_API INT32 avc444_compress(H264_CONTEXT* h264, const BYTE* pSrcData, DWORD SrcFormat,
