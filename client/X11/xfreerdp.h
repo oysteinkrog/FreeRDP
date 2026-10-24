@@ -416,6 +416,7 @@ void xf_lock_x11_(xfContext* xfc, const char* fkt);
 void xf_unlock_x11_(xfContext* xfc, const char* fkt);
 
 BOOL xf_picture_transform_required(xfContext* xfc);
+void xf_smart_sizing_fit(xfContext* xfc, int windowWidth, int windowHeight);
 
 #define xf_draw_screen(_xfc, _x, _y, _w, _h) \
 	xf_draw_screen_((_xfc), (_x), (_y), (_w), (_h), __func__, __FILE__, __LINE__)

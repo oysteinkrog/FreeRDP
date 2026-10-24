@@ -282,6 +282,41 @@ static void xf_draw_screen_scaled(xfContext* xfc, int x, int y, int w, int h)
 	XRenderFreePicture(xfc->display, windowPicture);
 }
 
+/* Smart sizing: scale the desktop to the largest size that fits the window with the
+ * desktop's aspect ratio, centred, with black bars on the other sides (xf_draw_screen_scaled
+ * paints them). FREERDP_SMART_SIZING_STRETCH=1 fills the window instead, as upstream does. */
+void xf_smart_sizing_fit(xfContext* xfc, int windowWidth, int windowHeight)
+{
+	WINPR_ASSERT(xfc);
+	rdpSettings* settings = xfc->common.context.settings;
+	WINPR_ASSERT(settings);
+
+	const INT64 dw = freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth);
+	const INT64 dh = freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight);
+	const char* stretch = getenv("FREERDP_SMART_SIZING_STRETCH");
+	xfc->offset_x = 0;
+	xfc->offset_y = 0;
+	xfc->scaledWidth = windowWidth;
+	xfc->scaledHeight = windowHeight;
+	/* Without smart sizing (multi-touch gestures only) the picture fills the window. */
+	if (!freerdp_settings_get_bool(settings, FreeRDP_SmartSizing) || (dw <= 0) || (dh <= 0) ||
+	    (windowWidth <= 0) || (windowHeight <= 0) || (stretch && (strcmp(stretch, "1") == 0)))
+		return;
+
+	if (1ll * windowWidth * dh > 1ll * windowHeight * dw)
+	{
+		/* wider than the desktop: bars left and right */
+		xfc->scaledWidth = (int)((1ll * windowHeight * dw + dh / 2) / dh);
+		xfc->offset_x = (windowWidth - xfc->scaledWidth) / 2;
+	}
+	else
+	{
+		/* taller than the desktop: bars at the top and bottom */
+		xfc->scaledHeight = (int)((1ll * windowWidth * dh + dw / 2) / dw);
+		xfc->offset_y = (windowHeight - xfc->scaledHeight) / 2;
+	}
+}
+
 BOOL xf_picture_transform_required(xfContext* xfc)
 {
 	rdpSettings* settings = nullptr;

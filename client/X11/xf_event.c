@@ -328,8 +328,8 @@ void xf_adjust_coordinates_to_screen(xfContext* xfc, UINT32* x, UINT32* y)
 			const double dh = freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight);
 			double xScalingFactor = xfc->scaledWidth / dw;
 			double yScalingFactor = xfc->scaledHeight / dh;
-			tx = (INT64)lround((1.0 * (*x) + xfc->offset_x) * xScalingFactor);
-			ty = (INT64)lround((1.0 * (*y) + xfc->offset_y) * yScalingFactor);
+			tx = (INT64)lround(1.0 * (*x) * xScalingFactor) + xfc->offset_x;
+			ty = (INT64)lround(1.0 * (*y) * yScalingFactor) + xfc->offset_y;
 		}
 
 #endif
@@ -865,8 +865,7 @@ static BOOL xf_event_ConfigureNotify(xfContext* xfc, const XConfigureEvent* even
 			if (freerdp_settings_get_bool(settings, FreeRDP_SmartSizing) ||
 			    freerdp_settings_get_bool(settings, FreeRDP_MultiTouchGestures))
 			{
-				xfc->scaledWidth = xfc->window->width;
-				xfc->scaledHeight = xfc->window->height;
+				xf_smart_sizing_fit(xfc, xfc->window->width, xfc->window->height);
 				xf_draw_screen(
 				    xfc, 0, 0,
 				    WINPR_ASSERTING_INT_CAST(
