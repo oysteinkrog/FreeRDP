@@ -20,6 +20,8 @@
 
 #include <freerdp/config.h>
 
+#include <stdlib.h>
+
 #include <freerdp/log.h>
 
 #include <libavcodec/avcodec.h>
@@ -314,7 +316,21 @@ static BOOL ffmpeg_open_context(FREERDP_DSP_CONTEXT* WINPR_RESTRICT context)
 	context->context->sample_fmt = ffmpeg_sample_format(format);
 	context->context->time_base = av_make_q(1, context->context->sample_rate);
 
-	if ((ret = avcodec_open2(context->context, context->codec, nullptr)) < 0)
+	AVDictionary* options = nullptr;
+	if (context->common.encoder && (context->id == AV_CODEC_ID_OPUS))
+	{
+		/* libopus defaults to 20 ms frames in "audio" mode, which adds about 26.5 ms of
+		 * algorithmic delay. A remote desktop wants low delay, and CELT-only "lowdelay"
+		 * at RDP bit rates (64 kbit/s and up) keeps full quality. */
+		const char* application = getenv("FREERDP_OPUS_APPLICATION");
+		const char* frameMs = getenv("FREERDP_OPUS_FRAME_MS");
+		av_dict_set(&options, "application", application ? application : "lowdelay", 0);
+		av_dict_set(&options, "frame_duration", frameMs ? frameMs : "10", 0);
+	}
+
+	ret = avcodec_open2(context->context, context->codec, &options);
+	av_dict_free(&options);
+	if (ret < 0)
 	{
 		const char* err = av_err2str(ret);
 		WLog_ERR(TAG, "Error avcodec_open2 %s [%d]", err, ret);
