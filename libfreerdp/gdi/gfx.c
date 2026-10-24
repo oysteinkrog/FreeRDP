@@ -758,6 +758,90 @@ fail:
 }
 
 /**
+ * Private extension: H.265 4:4:4 in the AVC420 bitstream layout (RDPGFX_CODECID_HEVC444).
+ *
+ * @return 0 on success, otherwise a Win32 error code
+ */
+WINPR_ATTR_NODISCARD
+static UINT gdi_SurfaceCommand_HEVC444(rdpGdi* gdi, RdpgfxClientContext* context,
+                                       const RDPGFX_SURFACE_COMMAND* cmd)
+{
+#ifdef WITH_GFX_H264
+	WINPR_ASSERT(gdi);
+	WINPR_ASSERT(context);
+	WINPR_ASSERT(cmd);
+
+	WINPR_ASSERT(context->GetSurfaceData);
+	gdiGfxSurface* surface =
+	    (gdiGfxSurface*)context->GetSurfaceData(context, (UINT16)MIN(UINT16_MAX, cmd->surfaceId));
+
+	if (!surface)
+	{
+		WLog_ERR(TAG, "unable to retrieve surfaceData for surfaceId=%" PRIu32 "", cmd->surfaceId);
+		return ERROR_NOT_FOUND;
+	}
+
+	/* One decoder per surface, as for AVC420; the server starts every new surface with a
+	 * key frame. A surface that had H.264 before is switched over. */
+	if (!surface->h264)
+	{
+		surface->h264 = h264_context_new(FALSE);
+		if (!surface->h264)
+		{
+			WLog_ERR(TAG, "unable to create h264 context");
+			return ERROR_NOT_ENOUGH_MEMORY;
+		}
+
+		if (!h264_context_set_option(surface->h264, H264_CONTEXT_OPTION_HW_ACCEL,
+		                             (UINT32)freerdp_settings_get_bool(gdi->context->settings,
+		                                                               FreeRDP_SoftwareGdi) == 0))
+			return ERROR_INTERNAL_ERROR;
+	}
+
+	if (!h264_context_get_option(surface->h264, H264_CONTEXT_OPTION_HEVC444))
+	{
+		if (!h264_context_set_option(surface->h264, H264_CONTEXT_OPTION_HEVC444, 1))
+			return ERROR_NOT_SUPPORTED;
+		if (!h264_context_reset(surface->h264, surface->width, surface->height))
+			return ERROR_INTERNAL_ERROR;
+	}
+
+	if (!is_within_surface(surface, cmd))
+		return ERROR_INVALID_DATA;
+
+	const RDPGFX_AVC420_BITMAP_STREAM* bs = (const RDPGFX_AVC420_BITMAP_STREAM*)cmd->extra;
+	if (!bs)
+		return ERROR_INTERNAL_ERROR;
+
+	const RDPGFX_H264_METABLOCK* meta = &(bs->meta);
+	const INT32 rc = hevc444_decompress(surface->h264, bs->data, bs->length, surface->data,
+	                                    surface->format, surface->scanline, surface->width,
+	                                    surface->height, meta->regionRects, meta->numRegionRects);
+	if (rc < 0)
+	{
+		WLog_WARN(TAG, "hevc444_decompress failure: %" PRId32 ", ignoring update.", rc);
+		return CHANNEL_RC_OK;
+	}
+
+	for (UINT32 i = 0; i < meta->numRegionRects; i++)
+	{
+		if (!region16_union_rect(&(surface->invalidRegion), &(surface->invalidRegion),
+		                         &(meta->regionRects[i])))
+			return ERROR_INTERNAL_ERROR;
+	}
+
+	const UINT status = IFCALLRESULT(CHANNEL_RC_OK, context->UpdateSurfaceArea, context,
+	                                 surface->surfaceId, meta->numRegionRects, meta->regionRects);
+	if (status != CHANNEL_RC_OK)
+		return status;
+
+	return gdi_interFrameUpdate(gdi, context);
+#else
+	return ERROR_NOT_SUPPORTED;
+#endif
+}
+
+/**
  * Function description
  *
  * @return 0 on success, otherwise a Win32 error code
@@ -1200,6 +1284,10 @@ static UINT gdi_SurfaceCommand(RdpgfxClientContext* context, const RDPGFX_SURFAC
 
 		case RDPGFX_CODECID_AVC420:
 			status = gdi_SurfaceCommand_AVC420(gdi, context, cmd);
+			break;
+
+		case RDPGFX_CODECID_HEVC444:
+			status = gdi_SurfaceCommand_HEVC444(gdi, context, cmd);
 			break;
 
 		case RDPGFX_CODECID_AVC444v2:

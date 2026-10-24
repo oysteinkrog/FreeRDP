@@ -268,6 +268,7 @@ UINT rdpgfx_decode(RDPGFX_PLUGIN* gfx, RDPGFX_SURFACE_COMMAND* cmd)
 		case RDPGFX_CODECID_AV1:
 #endif
 		case RDPGFX_CODECID_AVC420:
+		case RDPGFX_CODECID_HEVC444: /* same layout: metablock, then the access unit */
 			if ((error = rdpgfx_decode_AVC420(gfx, cmd)))
 				WLog_Print(gfx->base.log, WLOG_ERROR,
 				           "rdpgfx_decode_AVC420 failed with error %" PRIu32 "", error);

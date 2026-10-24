@@ -643,7 +643,7 @@ static int libavcodec_decompress(H264_CONTEXT* WINPR_RESTRICT h264,
 		goto fail;
 	}
 
-	sys->videoFrame->format = AV_PIX_FMT_YUV420P;
+	sys->videoFrame->format = h264->hevc444 ? AV_PIX_FMT_YUV444P : AV_PIX_FMT_YUV420P;
 
 #if defined(WITH_VAAPI) || defined(WITH_VIDEOTOOLBOX)
 	status = avcodec_receive_frame(sys->codecDecoderContext,
@@ -1124,11 +1124,15 @@ static BOOL libavcodec_init(H264_CONTEXT* h264)
 
 	if (!h264->Compressor)
 	{
-		sys->codecDecoder = avcodec_find_decoder(AV_CODEC_ID_H264);
+		/* H264_CONTEXT_OPTION_HEVC444 (private extension): the same context decodes
+		 * H.265 4:4:4 for RDPGFX_CODECID_HEVC444 instead of H.264. */
+		const enum AVCodecID decoderId = h264->hevc444 ? AV_CODEC_ID_HEVC : AV_CODEC_ID_H264;
+		sys->codecDecoder = avcodec_find_decoder(decoderId);
 
 		if (!sys->codecDecoder)
 		{
-			WLog_Print(h264->log, WLOG_ERROR, "Failed to find libav H.264 codec");
+			WLog_Print(h264->log, WLOG_ERROR, "Failed to find libav %s codec",
+			           h264->hevc444 ? "H.265" : "H.264");
 			goto EXCEPTION;
 		}
 
@@ -1138,6 +1142,14 @@ static BOOL libavcodec_init(H264_CONTEXT* h264)
 		{
 			WLog_Print(h264->log, WLOG_ERROR, "Failed to allocate libav codec context");
 			goto EXCEPTION;
+		}
+
+		if (h264->hevc444)
+		{
+			/* Return each picture as soon as it is decoded: frame threading holds one frame
+			 * back, and the server sends no reordered pictures. */
+			sys->codecDecoderContext->flags |= AV_CODEC_FLAG_LOW_DELAY;
+			sys->codecDecoderContext->thread_count = 1;
 		}
 
 #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(59, 18, 100)
@@ -1164,8 +1176,9 @@ static BOOL libavcodec_init(H264_CONTEXT* h264)
 				goto fail_hwdevice_create;
 			}
 		}
-		WLog_Print(h264->log, WLOG_INFO, "Using VAAPI [%s|%s] for accelerated H264 decoding",
-		           get_vaapi_device(), vaapi_vendor(sys->hwctx));
+		WLog_Print(h264->log, WLOG_INFO, "Using VAAPI [%s|%s] for accelerated %s decoding",
+		           get_vaapi_device(), vaapi_vendor(sys->hwctx),
+		           h264->hevc444 ? "H.265 4:4:4" : "H264");
 
 		sys->codecDecoderContext->get_format = libavcodec_get_format;
 		sys->hw_pix_fmt = AV_PIX_FMT_VAAPI;
@@ -1209,7 +1222,7 @@ static BOOL libavcodec_init(H264_CONTEXT* h264)
 			goto EXCEPTION;
 		}
 
-		sys->codecParser = av_parser_init(AV_CODEC_ID_H264);
+		sys->codecParser = av_parser_init(decoderId);
 
 		if (!sys->codecParser)
 		{

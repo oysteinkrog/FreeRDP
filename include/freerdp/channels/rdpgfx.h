@@ -147,7 +147,10 @@ typedef enum WINPR_C23_ENUM_TYPE(uint32_t)
 	RDPGFX_CAPS_FLAG_AVC420_ENABLED = 0x00000010U,   /* 8.1+ */
 	RDPGFX_CAPS_FLAG_AVC_DISABLED = 0x00000020U,     /* 10.0+ */
 	RDPGFX_CAPS_FLAG_AVC_THINCLIENT = 0x00000040U,   /* 10.3+ */
-	RDPGFX_CAPS_FLAG_SCALEDMAP_DISABLE = 0x00000080U /* 10.7+ */
+	RDPGFX_CAPS_FLAG_SCALEDMAP_DISABLE = 0x00000080U, /* 10.7+ */
+	RDPGFX_CAPS_FLAG_HEVC444_SUPPORTED =
+	    0x08000000U /** Private extension: the client decodes RDPGFX_CODECID_HEVC444. Sent in
+	                   the 10.7 capability set only when FREERDP_GFX_HEVC444=1 */
 #if defined(WITH_GFX_AZURE)
 	,
 	RDPGFX_CAPS_FLAG_SCP_DISABLE = 0x00000100 /* 11.0+, undocumented, Azure only */
@@ -193,6 +196,9 @@ typedef enum WINPR_C23_ENUM_TYPE(uint16_t)
 	RDPGFX_CODECID_AV1 =
 		0x0001u, /** Custom Extension: Only valid if RDPGFX_CAPVERSION_FRDP_1 is used */
 #endif
+	RDPGFX_CODECID_HEVC444 = 0x0002u, /** Private extension: H.265 4:4:4, AVC420 bitstream
+	                                    layout (metablock + Annex B access unit). Only valid
+	                                    when the client sent RDPGFX_CAPS_FLAG_HEVC444_SUPPORTED */
 	RDPGFX_CODECID_CAVIDEO = 0x0003u,
 	RDPGFX_CODECID_CLEARCODEC = 0x0008u,
 	RDPGFX_CODECID_CAPROGRESSIVE = 0x0009u,
