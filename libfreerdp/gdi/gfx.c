@@ -685,6 +685,17 @@ fail:
 	return status;
 }
 
+/* A server that sent H.265 4:4:4 (RDPGFX_CODECID_HEVC444) may fall back to H.264 on the
+ * same surface. Its first H.264 frame is a key frame, so a fresh H.264 decoder is enough. */
+static BOOL gdi_surface_leave_hevc444(gdiGfxSurface* surface)
+{
+	if (!h264_context_get_option(surface->h264, H264_CONTEXT_OPTION_HEVC444))
+		return TRUE;
+	if (!h264_context_set_option(surface->h264, H264_CONTEXT_OPTION_HEVC444, 0))
+		return FALSE;
+	return h264_context_reset(surface->h264, surface->width, surface->height);
+}
+
 /**
  * Function description
  *
@@ -735,6 +746,9 @@ static UINT gdi_SurfaceCommand_AVC420(rdpGdi* gdi, RdpgfxClientContext* context,
 
 	if (!surface->h264)
 		return ERROR_NOT_SUPPORTED;
+
+	if (!gdi_surface_leave_hevc444(surface))
+		return ERROR_INTERNAL_ERROR;
 
 	if (!is_within_surface(surface, cmd))
 		return ERROR_INVALID_DATA;
@@ -913,6 +927,9 @@ static UINT gdi_SurfaceCommand_AVC444(rdpGdi* gdi, RdpgfxClientContext* context,
 
 	if (!surface->h264)
 		return ERROR_NOT_SUPPORTED;
+
+	if (!gdi_surface_leave_hevc444(surface))
+		return ERROR_INTERNAL_ERROR;
 
 	if (!is_within_surface(surface, cmd))
 		return ERROR_INVALID_DATA;
